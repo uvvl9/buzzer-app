@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Buzzer Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Entry Screen -->
+  <div id="screen-entry" class="screen active">
+    <div class="entry-card">
+      <h1 class="logo">⚡ Buzzer</h1>
+      <p class="subtitle">Quiz Competition</p>
+      <div class="form-group">
+        <label for="entry-name">Your Name</label>
+        <input id="entry-name" type="text" placeholder="Enter your name" maxlength="20" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label for="entry-code">Room Code</label>
+        <input id="entry-code" type="text" placeholder="e.g. K8F21" maxlength="5" autocomplete="off" style="text-transform:uppercase" />
+        <p class="hint">Leave blank to create a new game</p>
+      </div>
+      <div id="entry-error" class="error-msg hidden"></div>
+      <div class="entry-buttons">
+        <button id="btn-create" class="btn btn-host">Create Game (Host)</button>
+        <button id="btn-join" class="btn btn-join">Join Game</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Host Screen -->
+  <div id="screen-host" class="screen">
+    <div class="host-header">
+      <div class="room-code-display">
+        Room: <span id="host-room-code">-----</span>
+      </div>
+      <div class="host-name-display">Host: <span id="host-name-display"></span></div>
+    </div>
+
+    <div class="host-layout">
+      <!-- Team A -->
+      <div class="team-panel team-a">
+        <h2 class="team-title team-a-title">Team A</h2>
+        <div class="slots" id="host-team-a"></div>
+      </div>
+
+      <!-- Center Controls -->
+      <div class="host-center">
+        <div id="host-status-banner" class="status-banner waiting">
+          Waiting for players...
+        </div>
+
+        <div id="host-buzzer-info" class="buzzer-info hidden">
+          <div class="buzzer-player-name" id="host-buzzer-name"></div>
+          <div class="buzzer-player-team" id="host-buzzer-team"></div>
+        </div>
+
+        <div id="host-timer" class="timer-display hidden">
+          <svg class="timer-ring" viewBox="0 0 120 120">
+            <circle class="timer-ring-bg" cx="60" cy="60" r="54" />
+            <circle class="timer-ring-fill" id="timer-ring-fill" cx="60" cy="60" r="54" />
+          </svg>
+          <div class="timer-number" id="host-timer-number">5</div>
+        </div>
+
+        <div class="host-controls">
+          <button id="btn-reset" class="btn btn-reset">Reset Buzzers</button>
+          <button id="btn-correct" class="btn btn-correct" disabled>Correct Answer</button>
+          <button id="btn-wrong" class="btn btn-wrong" disabled>Wrong Answer</button>
+        </div>
+      </div>
+
+      <!-- Team B -->
+      <div class="team-panel team-b">
+        <h2 class="team-title team-b-title">Team B</h2>
+        <div class="slots" id="host-team-b"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Participant Screen -->
+  <div id="screen-participant" class="screen">
+    <!-- Team Selection View -->
+    <div id="view-team-select" class="participant-view">
+      <div class="participant-header">
+        <div class="room-code-display">Room: <span id="part-room-code"></span></div>
+        <div class="participant-name-display">Hi, <span id="part-name-display"></span>!</div>
+      </div>
+      <p class="select-team-prompt">Select your slot to join a team</p>
+
+      <div class="part-teams-grid">
+        <div class="part-team">
+          <h2 class="team-title team-a-title">Team A</h2>
+          <div class="slots" id="part-team-a"></div>
+        </div>
+        <div class="part-team">
+          <h2 class="team-title team-b-title">Team B</h2>
+          <div class="slots" id="part-team-b"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buzzer View -->
+    <div id="view-buzzer" class="participant-view hidden">
+      <div class="participant-header">
+        <div class="room-code-display">Room: <span id="buzz-room-code"></span></div>
+        <div id="buzz-player-info" class="buzz-player-info"></div>
+      </div>
+
+      <div id="part-status-banner" class="status-banner waiting">
+        Waiting...
+      </div>
+
+      <div id="part-buzzer-info" class="buzzer-info hidden">
+        <div class="buzzer-player-name" id="part-buzzer-name"></div>
+        <div class="buzzer-player-team" id="part-buzzer-team"></div>
+      </div>
+
+      <div id="part-timer" class="timer-display hidden">
+        <svg class="timer-ring" viewBox="0 0 120 120">
+          <circle class="timer-ring-bg" cx="60" cy="60" r="54" />
+          <circle class="timer-ring-fill" id="part-timer-ring-fill" cx="60" cy="60" r="54" />
+        </svg>
+        <div class="timer-number" id="part-timer-number">5</div>
+      </div>
+
+      <div class="buzzer-wrapper">
+        <button id="buzzer-btn" class="buzzer-button">
+          <span class="buzzer-label">BUZZ!</span>
+        </button>
+      </div>
+
+      <button id="btn-change-slot" class="btn btn-secondary change-slot-btn">Change Slot</button>
+
+      <!-- Mini team grid -->
+      <div class="mini-teams">
+        <div class="mini-team">
+          <div class="mini-team-title team-a-title">A</div>
+          <div class="mini-slots" id="mini-team-a"></div>
+        </div>
+        <div class="mini-team">
+          <div class="mini-team-title team-b-title">B</div>
+          <div class="mini-slots" id="mini-team-b"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
