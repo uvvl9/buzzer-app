@@ -3,29 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Buzzer Game</title>
+  <title>Buzzer — Quiz Competition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Exo+2:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <!-- Entry Screen -->
   <div id="screen-entry" class="screen active">
+    <div class="entry-bg">
+      <div class="grid-lines"></div>
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
     <div class="entry-card">
-      <h1 class="logo">⚡ Buzzer</h1>
+      <div class="logo-wrap">
+        <span class="logo-bolt">⚡</span>
+        <h1 class="logo">BUZZER</h1>
+      </div>
       <p class="subtitle">Quiz Competition</p>
+
       <div class="form-group">
         <label for="entry-name">Your Name</label>
         <input id="entry-name" type="text" placeholder="Enter your name" maxlength="20" autocomplete="off" />
       </div>
       <div class="form-group">
-        <label for="entry-code">Room Code</label>
+        <label for="entry-code">
+          Room Code
+          <span class="label-hint">— leave blank to create a game</span>
+        </label>
         <input id="entry-code" type="text" placeholder="e.g. K8F21" maxlength="5" autocomplete="off" style="text-transform:uppercase" />
-        <p class="hint">Leave blank to create a new game</p>
       </div>
+
       <div id="entry-error" class="error-msg hidden"></div>
+
       <div class="entry-buttons">
-        <button id="btn-create" class="btn btn-host">Create Game (Host)</button>
-        <button id="btn-join" class="btn btn-join">Join Game</button>
+        <button id="btn-create" class="btn btn-host">
+          <span class="btn-icon">👑</span> Create Game
+        </button>
+        <button id="btn-join" class="btn btn-join">
+          <span class="btn-icon">🎮</span> Join Game
+        </button>
       </div>
     </div>
   </div>
@@ -34,25 +55,34 @@
   <div id="screen-host" class="screen">
     <div class="host-header">
       <div class="room-code-display">
-        Room: <span id="host-room-code">-----</span>
+        ROOM <span id="host-room-code">-----</span>
+        <button id="btn-copy-code" class="btn-copy" title="Copy room code">⧉</button>
       </div>
-      <div class="host-name-display">Host: <span id="host-name-display"></span></div>
+      <span class="host-badge">HOST</span>
+      <div class="host-header-right">
+        <div class="host-name-display" id="host-name-display"></div>
+        <button id="btn-settings" class="btn-settings" title="Game Settings">⚙</button>
+      </div>
     </div>
 
     <div class="host-layout">
       <!-- Team A -->
-      <div class="team-panel team-a">
-        <h2 class="team-title team-a-title">Team A</h2>
+      <div class="team-panel team-a-panel">
+        <div class="team-header">
+          <h2 class="team-title team-a-title">Team A</h2>
+          <span class="team-count" id="host-team-a-count">0 / 6</span>
+        </div>
         <div class="slots" id="host-team-a"></div>
       </div>
 
       <!-- Center Controls -->
       <div class="host-center">
         <div id="host-status-banner" class="status-banner waiting">
-          Waiting for players...
+          Waiting for buzz...
         </div>
 
         <div id="host-buzzer-info" class="buzzer-info hidden">
+          <div class="buzzer-flash-label">BUZZED!</div>
           <div class="buzzer-player-name" id="host-buzzer-name"></div>
           <div class="buzzer-player-team" id="host-buzzer-team"></div>
         </div>
@@ -66,15 +96,18 @@
         </div>
 
         <div class="host-controls">
-          <button id="btn-reset" class="btn btn-reset">Reset Buzzers</button>
-          <button id="btn-correct" class="btn btn-correct" disabled>Correct Answer</button>
-          <button id="btn-wrong" class="btn btn-wrong" disabled>Wrong Answer</button>
+          <button id="btn-correct" class="btn btn-correct" disabled>✓ Correct</button>
+          <button id="btn-wrong" class="btn btn-wrong" disabled>✗ Wrong</button>
+          <button id="btn-reset" class="btn btn-reset">↺ Reset</button>
         </div>
       </div>
 
       <!-- Team B -->
-      <div class="team-panel team-b">
-        <h2 class="team-title team-b-title">Team B</h2>
+      <div class="team-panel team-b-panel">
+        <div class="team-header">
+          <h2 class="team-title team-b-title">Team B</h2>
+          <span class="team-count" id="host-team-b-count">0 / 6</span>
+        </div>
         <div class="slots" id="host-team-b"></div>
       </div>
     </div>
@@ -82,20 +115,23 @@
 
   <!-- Participant Screen -->
   <div id="screen-participant" class="screen">
+
     <!-- Team Selection View -->
     <div id="view-team-select" class="participant-view">
       <div class="participant-header">
-        <div class="room-code-display">Room: <span id="part-room-code"></span></div>
-        <div class="participant-name-display">Hi, <span id="part-name-display"></span>!</div>
+        <div class="room-code-display">ROOM <span id="part-room-code"></span></div>
+        <div class="participant-name-display">👋 <span id="part-name-display"></span></div>
       </div>
-      <p class="select-team-prompt">Select your slot to join a team</p>
-
+      <div class="select-team-prompt">
+        <span class="prompt-icon">👆</span>
+        Pick a slot to join a team
+      </div>
       <div class="part-teams-grid">
-        <div class="part-team">
+        <div class="part-team team-a-section">
           <h2 class="team-title team-a-title">Team A</h2>
           <div class="slots" id="part-team-a"></div>
         </div>
-        <div class="part-team">
+        <div class="part-team team-b-section">
           <h2 class="team-title team-b-title">Team B</h2>
           <div class="slots" id="part-team-b"></div>
         </div>
@@ -104,8 +140,10 @@
 
     <!-- Buzzer View -->
     <div id="view-buzzer" class="participant-view hidden">
-      <div class="participant-header">
-        <div class="room-code-display">Room: <span id="buzz-room-code"></span></div>
+      <div class="buzzer-screen-bg" id="buzzer-screen-bg"></div>
+
+      <div class="participant-header buzzer-header">
+        <div class="room-code-display">ROOM <span id="buzz-room-code"></span></div>
         <div id="buzz-player-info" class="buzz-player-info"></div>
       </div>
 
@@ -114,6 +152,7 @@
       </div>
 
       <div id="part-buzzer-info" class="buzzer-info hidden">
+        <div class="buzzer-flash-label">BUZZED!</div>
         <div class="buzzer-player-name" id="part-buzzer-name"></div>
         <div class="buzzer-player-team" id="part-buzzer-team"></div>
       </div>
@@ -127,28 +166,81 @@
       </div>
 
       <div class="buzzer-wrapper">
+        <div class="buzzer-outer-ring ring-1"></div>
+        <div class="buzzer-outer-ring ring-2"></div>
         <button id="buzzer-btn" class="buzzer-button">
           <span class="buzzer-label">BUZZ!</span>
         </button>
       </div>
 
-      <button id="btn-change-slot" class="btn btn-secondary change-slot-btn">Change Slot</button>
+      <button id="btn-change-slot" class="btn btn-secondary change-slot-btn">↩ Change Slot</button>
 
-      <!-- Mini team grid -->
       <div class="mini-teams">
         <div class="mini-team">
-          <div class="mini-team-title team-a-title">A</div>
+          <div class="mini-team-title team-a-title">Team A</div>
           <div class="mini-slots" id="mini-team-a"></div>
         </div>
         <div class="mini-team">
-          <div class="mini-team-title team-b-title">B</div>
+          <div class="mini-team-title team-b-title">Team B</div>
           <div class="mini-slots" id="mini-team-b"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Notification Toast -->
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">⚙ Game Settings</h2>
+        <button id="btn-close-settings" class="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Answer Timer</div>
+            <div class="setting-desc">Seconds given to answer after buzzing</div>
+          </div>
+          <div class="setting-control">
+            <input type="range" id="setting-answer-time" class="range-slider" min="3" max="30" value="5" step="1" />
+            <span class="range-value" id="setting-answer-time-val">5s</span>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Opponent Chance Timer</div>
+            <div class="setting-desc">Seconds for the opposing team to buzz</div>
+          </div>
+          <div class="setting-control">
+            <input type="range" id="setting-opponent-time" class="range-slider" min="5" max="60" value="10" step="1" />
+            <span class="range-value" id="setting-opponent-time-val">10s</span>
+          </div>
+        </div>
+
+        <div class="setting-row setting-row-toggle">
+          <div class="setting-info">
+            <div class="setting-label">Lock Wrong Players</div>
+            <div class="setting-desc">Prevent players who answered wrong from buzzing again this round</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="setting-lock-wrong" checked />
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+          </label>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button id="btn-save-settings" class="btn btn-host">Apply Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
   <script src="/socket.io/socket.io.js"></script>

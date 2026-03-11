@@ -14,33 +14,31 @@ const rooms = {};
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 5; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
+  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
 }
 
 function createRoom(hostId, hostName) {
   let code;
-  do {
-    code = generateRoomCode();
-  } while (rooms[code]);
+  do { code = generateRoomCode(); } while (rooms[code]);
 
   rooms[code] = {
-    code,
-    hostId,
-    hostName,
-    // States: waiting | first_buzz | opponent_chance | opponent_buzz | open_buzz | open_buzz_active
+    code, hostId, hostName,
+    // States: waiting | first_buzz | opponent_chance | opponent_buzz | open_buzz | open_buzz_active | correct_reveal
     state: 'waiting',
-    teams: {
-      A: Array(6).fill(null),
-      B: Array(6).fill(null),
-    },
+    teams: { A: Array(6).fill(null), B: Array(6).fill(null) },
     currentBuzzer: null,
     allowedTeam: null,
-    intervalTimer: null,
+    wrongPlayers: [],    // [{ playerId, playerName, team }] — persists until round reset
+    correctPlayer: null, // { playerId, playerName, team }
+    settings: {
+      answerTime: 5,       // seconds for the answer timer
+      opponentTime: 10,    // seconds for opponent-chance timer
+      lockWrongPlayers: true,
+    },
+    _timer: null,
+    _revealTimer: null,
   };
-
   return rooms[code];
 }
 
@@ -51,14 +49,15 @@ function getRoomState(room) {
     teams: room.teams,
     currentBuzzer: room.currentBuzzer,
     allowedTeam: room.allowedTeam,
+    wrongPlayers: room.wrongPlayers,
+    correctPlayer: room.correctPlayer,
+    settings: room.settings,
   };
 }
 
 function clearTimer(room) {
-  if (room.intervalTimer) {
-    clearInterval(room.intervalTimer);
-    room.intervalTimer = null;
-  }
+  if (room._timer)       { clearInterval(room._timer);  room._timer = null; }
+  if (room._revealTimer) { clearTimeout(room._revealTimer); room._revealTimer = null; }
 }
 
 function startCountdown(room, duration, onEnd) {
@@ -66,7 +65,7 @@ function startCountdown(room, duration, onEnd) {
   let remaining = duration;
   io.to(room.code).emit('timer_update', { remaining, total: duration });
 
-  room.intervalTimer = setInterval(() => {
+  room._timer = setInterval(() => {
     remaining--;
     io.to(room.code).emit('timer_update', { remaining, total: duration });
     if (remaining <= 0) {
@@ -81,18 +80,34 @@ function resetRoom(room) {
   room.state = 'waiting';
   room.currentBuzzer = null;
   room.allowedTeam = null;
+  room.wrongPlayers = [];
+  room.correctPlayer = null;
   io.to(room.code).emit('game_state', getRoomState(room));
   io.to(room.code).emit('timer_update', { remaining: 0, total: 0 });
+}
+
+function markWrong(room) {
+  if (!room.currentBuzzer) return;
+  const already = room.wrongPlayers.some(p => p.playerId === room.currentBuzzer.playerId);
+  if (!already) room.wrongPlayers.push({ ...room.currentBuzzer });
+}
+
+// Returns how many players can still buzz (eligible = not in wrongPlayers when lockWrongPlayers is on)
+function eligibleCount(room) {
+  const allIds = [];
+  for (const t of ['A', 'B'])
+    for (const slot of room.teams[t])
+      if (slot) allIds.push(slot.playerId);
+
+  if (!room.settings.lockWrongPlayers) return allIds.length;
+  return allIds.filter(id => !room.wrongPlayers.some(p => p.playerId === id)).length;
 }
 
 io.on('connection', (socket) => {
   console.log('Connected:', socket.id);
 
   socket.on('create_room', ({ name }) => {
-    if (!name || !name.trim()) {
-      socket.emit('error_msg', { message: 'Name is required.' });
-      return;
-    }
+    if (!name?.trim()) { socket.emit('error_msg', { message: 'Name is required.' }); return; }
     const room = createRoom(socket.id, name.trim());
     socket.join(room.code);
     socket.roomCode = room.code;
@@ -103,16 +118,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join_room', ({ name, code }) => {
-    if (!name || !name.trim()) {
-      socket.emit('error_msg', { message: 'Name is required.' });
-      return;
-    }
+    if (!name?.trim()) { socket.emit('error_msg', { message: 'Name is required.' }); return; }
     const upperCode = (code || '').trim().toUpperCase();
     const room = rooms[upperCode];
-    if (!room) {
-      socket.emit('error_msg', { message: 'Room not found. Check the code and try again.' });
-      return;
-    }
+    if (!room) { socket.emit('error_msg', { message: 'Room not found. Check the code and try again.' }); return; }
     socket.join(upperCode);
     socket.roomCode = upperCode;
     socket.isHost = false;
@@ -127,16 +136,10 @@ io.on('connection', (socket) => {
     const room = rooms[socket.roomCode];
     if (!room || socket.isHost) return;
 
-    // Remove player from any current slot
-    for (const t of ['A', 'B']) {
-      for (let i = 0; i < 6; i++) {
-        if (room.teams[t][i] && room.teams[t][i].playerId === socket.id) {
-          room.teams[t][i] = null;
-        }
-      }
-    }
+    for (const t of ['A', 'B'])
+      for (let i = 0; i < 6; i++)
+        if (room.teams[t][i]?.playerId === socket.id) room.teams[t][i] = null;
 
-    // Check if slot is taken by someone else
     if (room.teams[team][slot] && room.teams[team][slot].playerId !== socket.id) {
       socket.emit('error_msg', { message: 'That slot is already taken.' });
       socket.emit('game_state', getRoomState(room));
@@ -146,73 +149,72 @@ io.on('connection', (socket) => {
     room.teams[team][slot] = { playerId: socket.id, playerName: socket.playerName };
     socket.team = team;
     socket.slot = slot;
-
     io.to(room.code).emit('game_state', getRoomState(room));
   });
 
   socket.on('leave_slot', () => {
     const room = rooms[socket.roomCode];
     if (!room || socket.isHost) return;
-
-    for (const t of ['A', 'B']) {
-      for (let i = 0; i < 6; i++) {
-        if (room.teams[t][i] && room.teams[t][i].playerId === socket.id) {
-          room.teams[t][i] = null;
-        }
-      }
-    }
+    for (const t of ['A', 'B'])
+      for (let i = 0; i < 6; i++)
+        if (room.teams[t][i]?.playerId === socket.id) room.teams[t][i] = null;
     socket.team = null;
     socket.slot = null;
-
     io.to(room.code).emit('game_state', getRoomState(room));
   });
 
   socket.on('buzz', () => {
     const room = rooms[socket.roomCode];
     if (!room || socket.isHost) return;
-
-    if (!socket.team) {
-      socket.emit('error_msg', { message: 'Please select a team slot first.' });
-      return;
-    }
-
-    // Only valid states for buzzing
+    if (!socket.team) { socket.emit('error_msg', { message: 'Please select a team slot first.' }); return; }
     if (!['waiting', 'opponent_chance', 'open_buzz'].includes(room.state)) return;
-
-    // Team restriction check
     if (room.allowedTeam && room.allowedTeam !== socket.team) return;
 
-    const prevState = room.state;
-    room.currentBuzzer = {
-      playerId: socket.id,
-      playerName: socket.playerName,
-      team: socket.team,
-    };
+    // Lock check
+    if (room.settings.lockWrongPlayers && room.wrongPlayers.some(p => p.playerId === socket.id)) return;
 
-    if (prevState === 'waiting') {
-      room.state = 'first_buzz';
-    } else if (prevState === 'opponent_chance') {
-      room.state = 'opponent_buzz';
-    } else if (prevState === 'open_buzz') {
-      room.state = 'open_buzz_active';
-    }
+    const prevState = room.state;
+    room.currentBuzzer = { playerId: socket.id, playerName: socket.playerName, team: socket.team };
+
+    if      (prevState === 'waiting')          room.state = 'first_buzz';
+    else if (prevState === 'opponent_chance')  room.state = 'opponent_buzz';
+    else if (prevState === 'open_buzz')        room.state = 'open_buzz_active';
 
     io.to(room.code).emit('game_state', getRoomState(room));
 
-    // 5-second answer timer
-    startCountdown(room, 5, () => {
-      // Timer expired without host decision
+    // Answer timer
+    startCountdown(room, room.settings.answerTime, () => {
+      // Timer ran out during open_buzz_active — auto wrong
       if (room.state === 'open_buzz_active') {
-        resetRoom(room);
+        markWrong(room);
+        room.currentBuzzer = null;
+        if (eligibleCount(room) > 0) {
+          room.state = 'open_buzz';
+          io.to(room.code).emit('game_state', getRoomState(room));
+          io.to(room.code).emit('timer_update', { remaining: 0, total: 0 });
+        } else {
+          resetRoom(room);
+        }
       }
-      // For first_buzz and opponent_buzz, host should handle — just stop the timer
     });
   });
 
   socket.on('correct_answer', () => {
     const room = rooms[socket.roomCode];
     if (!room || !socket.isHost) return;
-    resetRoom(room);
+
+    clearTimer(room);
+    if (room.currentBuzzer) room.correctPlayer = { ...room.currentBuzzer };
+    room.state = 'correct_reveal';
+    room.currentBuzzer = null;
+    io.to(room.code).emit('game_state', getRoomState(room));
+    io.to(room.code).emit('timer_update', { remaining: 0, total: 0 });
+
+    // Show correct reveal for 2 seconds then auto-reset
+    room._revealTimer = setTimeout(() => {
+      room._revealTimer = null;
+      resetRoom(room);
+    }, 2000);
   });
 
   socket.on('wrong_answer', () => {
@@ -223,27 +225,41 @@ io.on('connection', (socket) => {
     const prevState = room.state;
 
     if (prevState === 'first_buzz') {
-      const oppositeTeam = room.currentBuzzer.team === 'A' ? 'B' : 'A';
+      markWrong(room);
+      const oppTeam = room.currentBuzzer?.team === 'A' ? 'B' : 'A';
       room.state = 'opponent_chance';
-      room.allowedTeam = oppositeTeam;
+      room.allowedTeam = oppTeam;
       room.currentBuzzer = null;
       io.to(room.code).emit('game_state', getRoomState(room));
 
-      startCountdown(room, 10, () => {
-        // Nobody from opponent team buzzed — open buzz
+      startCountdown(room, room.settings.opponentTime, () => {
         room.state = 'open_buzz';
         room.allowedTeam = null;
         io.to(room.code).emit('game_state', getRoomState(room));
         io.to(room.code).emit('timer_update', { remaining: 0, total: 0 });
       });
+
     } else if (prevState === 'opponent_buzz') {
+      markWrong(room);
       room.state = 'open_buzz';
       room.allowedTeam = null;
       room.currentBuzzer = null;
       io.to(room.code).emit('game_state', getRoomState(room));
       io.to(room.code).emit('timer_update', { remaining: 0, total: 0 });
+
     } else if (prevState === 'open_buzz_active') {
-      resetRoom(room);
+      // Mark wrong and KEEP open buzz — never auto-reset here
+      markWrong(room);
+      room.currentBuzzer = null;
+
+      if (room.settings.lockWrongPlayers && eligibleCount(room) === 0) {
+        // Everyone has been locked out — end the round
+        resetRoom(room);
+      } else {
+        room.state = 'open_buzz';
+        io.to(room.code).emit('game_state', getRoomState(room));
+        io.to(room.code).emit('timer_update', { remaining: 0, total: 0 });
+      }
     }
   });
 
@@ -253,8 +269,24 @@ io.on('connection', (socket) => {
     resetRoom(room);
   });
 
+  socket.on('update_settings', (newSettings) => {
+    const room = rooms[socket.roomCode];
+    if (!room || !socket.isHost) return;
+
+    const { answerTime, opponentTime, lockWrongPlayers } = newSettings;
+    if (typeof answerTime === 'number' && answerTime >= 3 && answerTime <= 60)
+      room.settings.answerTime = answerTime;
+    if (typeof opponentTime === 'number' && opponentTime >= 5 && opponentTime <= 120)
+      room.settings.opponentTime = opponentTime;
+    if (typeof lockWrongPlayers === 'boolean')
+      room.settings.lockWrongPlayers = lockWrongPlayers;
+
+    // Broadcast updated settings to all clients in the room
+    io.to(room.code).emit('settings_updated', room.settings);
+    socket.emit('error_msg', { message: `Settings saved!` }); // toast feedback
+  });
+
   socket.on('disconnect', () => {
-    console.log('Disconnected:', socket.id);
     const room = rooms[socket.roomCode];
     if (!room) return;
 
@@ -263,19 +295,15 @@ io.on('connection', (socket) => {
       io.to(room.code).emit('host_disconnected');
       delete rooms[socket.roomCode];
     } else {
-      for (const t of ['A', 'B']) {
-        for (let i = 0; i < 6; i++) {
-          if (room.teams[t][i] && room.teams[t][i].playerId === socket.id) {
-            room.teams[t][i] = null;
-          }
-        }
-      }
+      for (const t of ['A', 'B'])
+        for (let i = 0; i < 6; i++)
+          if (room.teams[t][i]?.playerId === socket.id) room.teams[t][i] = null;
+
+      room.wrongPlayers = room.wrongPlayers.filter(p => p.playerId !== socket.id);
       io.to(room.code).emit('game_state', getRoomState(room));
     }
   });
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Buzzer app running at http://localhost:${PORT}`);
-});
+server.listen(PORT, () => console.log(`Buzzer app running at http://localhost:${PORT}`));
